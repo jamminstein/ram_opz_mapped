@@ -474,4 +474,5 @@ end
 function cleanup()
   state.running = false
   all_notes_off()
+  if sequencer_clock then clock.cancel(sequencer_clock) end
 end
