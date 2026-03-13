@@ -4,7 +4,8 @@
 -- E2 select track | E3 density
 -- PARAMS: choose your WIDI midi port, root, scale, tempo
 --
--- v1.1: Added OP-Z step component CC mapping and visual track activity
+-- v1.2: Redesigned screen with status strip, live zone with activity meters,
+--       step component indicator, context bar, and transient parameter popup
 
 local musicutil = require "musicutil"
 
@@ -22,6 +23,7 @@ local state = {
   root = 48, -- C3
   scale = 1,
   bpm = 118,
+  beat_phase = 0,
 }
 
 local midi_device_names = {}
@@ -30,7 +32,16 @@ local tracks = {}
 
 -- Track activity indicators (flash on note trigger)
 local track_activity = { 0, 0, 0, 0, 0, 0, 0, 0 }
-local ACTIVITY_DECAY = 0.1
+local ACTIVITY_DECAY = 0.5
+
+-- Transient parameter popup state
+local popup_param = nil
+local popup_val = nil
+local popup_time = 0
+local POPUP_DURATION = 0.8
+
+-- Track label abbreviations
+local track_labels = { "KK", "SN", "PR", "SM", "BS", "LD", "AR", "CH" }
 
 -- OP-Z step component CC mapping per track
 -- Each track has 8 step components (CC 1-8)
@@ -388,6 +399,7 @@ local function play_step()
 
   state.step = state.step + 1
   if state.step > state.steps then state.step = 1 end
+  state.beat_phase = (state.beat_phase + 1) % 4
   screen_dirty = true
 end
 
@@ -398,7 +410,7 @@ local function sequencer()
     
     -- Decay activity indicators
     for i = 1, 8 do
-      track_activity[i] = math.max(0, track_activity[i] - ACTIVITY_DECAY)
+      track_activity[i] = math.max(0, track_activity[i] - (ACTIVITY_DECAY / 12))
     end
     
     if screen_dirty then
@@ -410,64 +422,108 @@ end
 
 function redraw()
   screen.clear()
-  local t = tracks[selected_track]
-
-  screen.level(15)
-  screen.move(2, 10)
-  screen.text("RAM OP-Z MAP")
-
-  screen.level(10)
-  screen.move(2, 21)
-  screen.text("RUN " .. (state.running and "ON" or "OFF"))
-  screen.move(72, 21)
-  screen.text("STP " .. state.step)
-
-  screen.move(2, 33)
-  screen.text(string.format("T%02d %s CH%d", selected_track, t.name, t.ch))
-
-  screen.move(2, 45)
-  screen.text("ON " .. (t.enabled and "YES" or "NO"))
-  screen.move(66, 45)
-  screen.text(string.format("DEN %.2f", t.density))
-
-  -- Draw step pattern
-  for i = 1, state.steps do
-    local x = 4 + ((i - 1) * 7)
-    local y = 55
-    if i == state.step and state.running then
-      screen.level(15)
-    elseif t.pattern[i] then
-      screen.level(8)
+  
+  -- ==============================================
+  -- STATUS STRIP (y 0-8)
+  -- ==============================================
+  screen.level(4)
+  screen.move(2, 7)
+  screen.text("RAM>OPZ")
+  
+  screen.level(6)
+  screen.move(120, 7)
+  screen.text_right(state.bpm)
+  
+  -- Beat pulse dot at x=124
+  if state.beat_phase == 0 and state.running then
+    screen.level(15)
+  else
+    screen.level(3)
+  end
+  screen.rect(122, 2, 3, 3)
+  screen.fill()
+  
+  -- ==============================================
+  -- LIVE ZONE (y 9-52): 8-channel sequencer
+  -- ==============================================
+  -- Each track row is ~5px tall
+  for ch = 1, 8 do
+    local y = 9 + (ch - 1) * 5
+    local t = tracks[ch]
+    
+    -- Track label at level 5 (or 12 if selected)
+    if ch == selected_track then
+      screen.level(12)
+    else
+      screen.level(5)
+    end
+    screen.move(2, y + 4)
+    screen.text(track_labels[ch])
+    
+    -- Subtle highlight bar behind selected track
+    if ch == selected_track then
+      screen.level(2)
+      screen.rect(0, y, 128, 5)
+      screen.fill()
+      screen.level(12)
+    end
+    
+    -- Activity meter: horizontal bar
+    local activity_brightness = math.floor(track_activity[ch] * 13) + 2
+    if track_activity[ch] > 0 then
+      screen.level(activity_brightness)
     else
       screen.level(2)
     end
-    screen.rect(x, y, 4, 6)
-    if t.pattern[i] then screen.fill() else screen.stroke() end
-  end
-
-  -- Draw activity indicators for all tracks (row at bottom)
-  for i = 1, 8 do
-    local x = 2 + (i - 1) * 15
-    local y = 64
-    if i == selected_track then
-      screen.level(15)
-    else
-      screen.level(math.floor(track_activity[i] * 10) + 2)
-    end
-    screen.rect(x, y, 13, 2)
-    if track_activity[i] > 0.3 then
+    local meter_width = math.floor(track_activity[ch] * 40)
+    if meter_width > 0 then
+      screen.rect(24, y + 1, meter_width, 3)
       screen.fill()
     else
+      screen.rect(24, y + 1, 40, 3)
       screen.stroke()
     end
+    
+    -- Step component indicator (STP) if active
+    if step_component_cc[ch].enabled then
+      screen.level(6)
+      screen.move(70, y + 4)
+      screen.text("STP")
+    end
   end
-
-  -- Current step position bar
-  screen.level(8)
-  screen.move(0, 48)
-  local step_x = 4 + ((state.step - 1) * 7) + 2
-  screen.text("[" .. state.step .. "]")
-
+  
+  -- ==============================================
+  -- CONTEXT BAR (y 53-58)
+  -- ==============================================
+  screen.level(6)
+  screen.move(2, 60)
+  screen.text(scale_names[state.scale] or "Unknown")
+  
+  screen.level(4)
+  screen.move(50, 60)
+  screen.text(midi_device_names[params:get("midi_out")] or "MIDI")
+  
+  -- Active track count
+  local active_count = 0
+  for i = 1, 8 do
+    if tracks[i].enabled then active_count = active_count + 1 end
+  end
+  screen.level(5)
+  screen.move(120, 60)
+  screen.text_right(active_count .. "/8")
+  
+  -- ==============================================
+  -- TRANSIENT PARAMETER POPUP (0.8s duration)
+  -- ==============================================
+  if popup_param and popup_time > 0 then
+    screen.level(15)
+    screen.move(64, 20)
+    screen.text_center(popup_param)
+    screen.move(64, 32)
+    screen.text_center(tostring(popup_val))
+    popup_time = popup_time - 1
+  end
+  
   screen.update()
 end
 
@@ -478,6 +534,11 @@ function enc(n, d)
     local t = tracks[selected_track]
     t.density = clamp(t.density + d / 100, 0, 1)
     regen_track(t)
+    
+    -- Show popup
+    popup_param = "DENSITY"
+    popup_val = string.format("%.2f", t.density)
+    popup_time = 10  -- ~0.8s at 12fps
   end
   screen_dirty = true
 end
@@ -526,6 +587,15 @@ function init()
 
   params:bang()
   clock.set_tempo(state.bpm)
+  
+  -- Screen refresh at ~12fps for animation
+  local screen_refresh = clock.run(function()
+    while true do
+      clock.sleep(1/12)
+      screen_dirty = true
+    end
+  end)
+  
   sequencer_clock = clock.run(sequencer)
 end
 
