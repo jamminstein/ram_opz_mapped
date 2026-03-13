@@ -3,6 +3,8 @@
 -- K2 start/stop | K3 regen track
 -- E2 select track | E3 density
 -- PARAMS: choose your WIDI midi port, root, scale, tempo
+--
+-- v1.1: Added OP-Z step component CC mapping and visual track activity
 
 local musicutil = require "musicutil"
 
@@ -25,6 +27,23 @@ local state = {
 local midi_device_names = {}
 local scale_names = {}
 local tracks = {}
+
+-- Track activity indicators (flash on note trigger)
+local track_activity = { 0, 0, 0, 0, 0, 0, 0, 0 }
+local ACTIVITY_DECAY = 0.1
+
+-- OP-Z step component CC mapping per track
+-- Each track has 8 step components (CC 1-8)
+local step_component_cc = {
+  { cc_base = 1, enabled = true },   -- Track 1
+  { cc_base = 9, enabled = true },   -- Track 2
+  { cc_base = 17, enabled = true },  -- Track 3
+  { cc_base = 25, enabled = true },  -- Track 4
+  { cc_base = 33, enabled = true },  -- Track 5
+  { cc_base = 41, enabled = true },  -- Track 6
+  { cc_base = 49, enabled = true },  -- Track 7
+  { cc_base = 57, enabled = true },  -- Track 8
+}
 
 local function build_midi_device_names()
   midi_device_names = {}
@@ -51,6 +70,8 @@ end
 
 local function note_on(ch, note, vel)
   if m then m:note_on(note, vel, ch) end
+  track_activity[ch] = 1.0
+  screen_dirty = true
 end
 
 local function note_off(ch, note)
@@ -59,6 +80,12 @@ end
 
 local function cc(ch, num, val)
   if m then m:cc(num, val, ch) end
+end
+
+local function send_step_component_cc(track_id, component, value)
+  if not step_component_cc[track_id].enabled then return end
+  local cc_num = step_component_cc[track_id].cc_base + component - 1
+  cc(tracks[track_id].ch, cc_num, math.floor(value))
 end
 
 local function all_notes_off()
@@ -287,23 +314,20 @@ local function regen_all()
 end
 
 local function play_chord(ch, root_note, vel)
-  -- build chord from scale degrees (root, 3rd, 5th, optional 7th)
   local scale = get_scale()
-  -- find root index in scale
   local root_idx = nil
   for i, n in ipairs(scale) do
     if n == root_note then root_idx = i; break end
   end
   local notes = {}
   if root_idx and root_idx + 4 <= #scale then
-    table.insert(notes, scale[root_idx])       -- root
-    table.insert(notes, scale[root_idx + 2])   -- 3rd degree
-    table.insert(notes, scale[root_idx + 4])   -- 5th degree
+    table.insert(notes, scale[root_idx])
+    table.insert(notes, scale[root_idx + 2])
+    table.insert(notes, scale[root_idx + 4])
     if root_idx + 6 <= #scale and math.random() < 0.4 then
-      table.insert(notes, scale[root_idx + 6]) -- 7th degree
+      table.insert(notes, scale[root_idx + 6])
     end
   else
-    -- fallback: just play the root
     notes = { root_note }
   end
   for _, n in ipairs(notes) do
@@ -329,6 +353,10 @@ local function animate_track_cc(t)
 
   cc(t.ch, 3, cutoff)   -- OP-Z cutoff
   cc(t.ch, 13, send)    -- OP-Z fx1 send
+  
+  -- Send step component CCs
+  send_step_component_cc(t.id, 1, cutoff)
+  send_step_component_cc(t.id, 2, send)
 end
 
 local function play_step()
@@ -367,6 +395,12 @@ local function sequencer()
   while true do
     clock.sync(1/4)
     if state.running then play_step() end
+    
+    -- Decay activity indicators
+    for i = 1, 8 do
+      track_activity[i] = math.max(0, track_activity[i] - ACTIVITY_DECAY)
+    end
+    
     if screen_dirty then
       redraw()
       screen_dirty = false
@@ -396,6 +430,7 @@ function redraw()
   screen.move(66, 45)
   screen.text(string.format("DEN %.2f", t.density))
 
+  -- Draw step pattern
   for i = 1, state.steps do
     local x = 4 + ((i - 1) * 7)
     local y = 55
@@ -409,6 +444,29 @@ function redraw()
     screen.rect(x, y, 4, 6)
     if t.pattern[i] then screen.fill() else screen.stroke() end
   end
+
+  -- Draw activity indicators for all tracks (row at bottom)
+  for i = 1, 8 do
+    local x = 2 + (i - 1) * 15
+    local y = 64
+    if i == selected_track then
+      screen.level(15)
+    else
+      screen.level(math.floor(track_activity[i] * 10) + 2)
+    end
+    screen.rect(x, y, 13, 2)
+    if track_activity[i] > 0.3 then
+      screen.fill()
+    else
+      screen.stroke()
+    end
+  end
+
+  -- Current step position bar
+  screen.level(8)
+  screen.move(0, 48)
+  local step_x = 4 + ((state.step - 1) * 7) + 2
+  screen.text("[" .. state.step .. "]")
 
   screen.update()
 end
