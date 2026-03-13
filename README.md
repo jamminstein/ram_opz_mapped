@@ -1,32 +1,25 @@
 # ram_opz_mapped
 
-An OP-Z-mapped generative sequencer for norns. Generates MIDI patterns mapped to OP-Z channels with Euclidean rhythms and per-track generative patterns.
-
-## Install
-
-`;install https://github.com/jamminstein/ram_opz_mapped`
+> OP-Z-mapped generative sequencer with euclidean rhythms
 
 ## Controls
 
-**Norns:**
-- K2: Start / Stop playback
-- K3: Regenerate track
-- E2: Select track
-- E3: Density (Euclidean rhythm density)
+- **E2** — select track
+- **E3** — adjust density
+- **K2** — start / stop
+- **K3** — regenerate track
 
-## Features
+## Grid
 
-- MIDI output mapped to OP-Z channels
-- Euclidean rhythm generation
-- Per-track independent patterns
-- Real-time pattern regeneration
-- Density control for rhythmic variation
+None required.
 
 ## Requirements
 
 - norns
-- MIDI output to OP-Z or compatible device
+- MIDI device (OP-Z or compatible)
 
-## Author
+## Install
 
-@jamminstein
+```
+;install https://github.com/jamminstein/ram_opz_mapped
+```
