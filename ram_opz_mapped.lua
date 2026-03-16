@@ -14,6 +14,7 @@ local function clamp(x,a,b) return math.max(a, math.min(b, x)) end
 local m = nil
 local selected_track = 1
 local sequencer_clock = nil
+local screen_refresh_id = nil
 local screen_dirty = true
 
 local state = {
@@ -589,7 +590,7 @@ function init()
   clock.set_tempo(state.bpm)
   
   -- Screen refresh at ~12fps for animation
-  local screen_refresh = clock.run(function()
+  screen_refresh_id = clock.run(function()
     while true do
       clock.sleep(1/12)
       screen_dirty = true
@@ -602,5 +603,6 @@ end
 function cleanup()
   state.running = false
   all_notes_off()
+  if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
 end
