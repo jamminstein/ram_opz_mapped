@@ -16,6 +16,8 @@ local selected_track = 1
 local sequencer_clock = nil
 local screen_refresh_id = nil
 local screen_dirty = true
+local pattern_locked = false     -- K2 long-hold to lock patterns
+local k2_down_time = 0
 
 local state = {
   running = false,
@@ -40,6 +42,10 @@ local popup_param = nil
 local popup_val = nil
 local popup_time = 0
 local POPUP_DURATION = 0.8
+
+-- Scene snapshots (8 scenes)
+local scenes = {}
+local current_scene = 1
 
 -- Track label abbreviations
 local track_labels = { "KK", "SN", "PR", "SM", "BS", "LD", "AR", "CH" }
@@ -104,6 +110,20 @@ local function all_notes_off()
   if not m then return end
   for ch = 1, 16 do
     m:cc(123, 0, ch) -- all notes off
+  end
+end
+
+-- Draw euclidean pattern as circle of dots
+local function draw_euclid_circle(x, y, radius, pattern)
+  if not pattern or #pattern == 0 then return end
+  local steps = #pattern
+  for i = 1, steps do
+    local angle = (i - 1) / steps * 2 * math.pi
+    local px = x + math.cos(angle) * radius
+    local py = y + math.sin(angle) * radius
+    screen.level(pattern[i] and 12 or 3)
+    screen.circle(px, py, 1)
+    screen.fill()
   end
 end
 
@@ -201,6 +221,45 @@ local function init_tracks()
   tracks[6].send_depth = 0.15
   tracks[7].send_depth = 0.12
   tracks[8].send_depth = 0.18
+end
+
+-- Scene save/load functions
+local function save_scene(slot)
+  local scene_data = {}
+  for i = 1, 16 do
+    scene_data[i] = {
+      density = tracks[i].density,
+      vel = tracks[i].vel,
+      oct = tracks[i].oct,
+      pattern = {},
+      notes = {},
+    }
+    for j = 1, state.steps do
+      scene_data[i].pattern[j] = tracks[i].pattern[j]
+      scene_data[i].notes[j] = tracks[i].notes[j]
+    end
+  end
+  scenes[slot] = scene_data
+  local path = _path.data .. "ram_opz_mapped/scene_" .. slot .. ".lua"
+  os.execute("mkdir -p " .. _path.data .. "ram_opz_mapped/")
+  tab.save(scene_data, path)
+  print("ram_opz: scene " .. slot .. " saved")
+end
+
+local function load_scene(slot)
+  if not scenes[slot] then return end
+  local scene_data = scenes[slot]
+  for i = 1, 16 do
+    if scene_data[i] then
+      tracks[i].density = scene_data[i].density or 0.5
+      tracks[i].vel = scene_data[i].vel or 95
+      tracks[i].oct = scene_data[i].oct or 0
+      tracks[i].pattern = scene_data[i].pattern or {}
+      tracks[i].notes = scene_data[i].notes or {}
+    end
+  end
+  current_scene = slot
+  print("ram_opz: scene " .. slot .. " loaded")
 end
 
 local function set_drum_pattern(t)
@@ -430,10 +489,18 @@ function redraw()
   screen.level(4)
   screen.move(2, 7)
   screen.text("RAM>OPZ")
-  
+
+  -- BPM display (prominent)
+  screen.level(8)
+  screen.font_size(7)
+  screen.move(64, 7)
+  screen.text_center(state.bpm .. " BPM")
+  screen.font_size(8)
+
+  -- Scene indicator
   screen.level(6)
   screen.move(120, 7)
-  screen.text_right(state.bpm)
+  screen.text_right("S" .. current_scene)
   
   -- Beat pulse dot at x=124
   if state.beat_phase == 0 and state.running then
@@ -491,6 +558,11 @@ function redraw()
       screen.move(70, y + 4)
       screen.text("STP")
     end
+
+    -- Euclidean pattern circle (small, right side)
+    if t.enabled and t.pattern then
+      draw_euclid_circle(105, y + 2, 4, t.pattern)
+    end
   end
   
   -- ==============================================
@@ -512,6 +584,13 @@ function redraw()
   screen.level(5)
   screen.move(120, 60)
   screen.text_right(active_count .. "/8")
+
+  -- Pattern lock indicator
+  if pattern_locked then
+    screen.level(15)
+    screen.move(2, 65)
+    screen.text("LOCK")
+  end
   
   -- ==============================================
   -- TRANSIENT PARAMETER POPUP (0.8s duration)
@@ -529,13 +608,22 @@ function redraw()
 end
 
 function enc(n, d)
-  if n == 2 then
+  if n == 1 then
+    -- E1: scene selection
+    current_scene = clamp(current_scene + d, 1, 8)
+    load_scene(current_scene)
+    popup_param = "SCENE"
+    popup_val = current_scene
+    popup_time = 10
+  elseif n == 2 then
     selected_track = clamp(selected_track + d, 1, 16)
   elseif n == 3 then
     local t = tracks[selected_track]
     t.density = clamp(t.density + d / 100, 0, 1)
-    regen_track(t)
-    
+    if not pattern_locked then
+      regen_track(t)
+    end
+
     -- Show popup
     popup_param = "DENSITY"
     popup_val = string.format("%.2f", t.density)
@@ -545,16 +633,37 @@ function enc(n, d)
 end
 
 function key(n, z)
-  if z == 0 then return end
-
   if n == 2 then
-    state.running = not state.running
-    if not state.running then all_notes_off() end
-  elseif n == 3 then
-    regen_track(tracks[selected_track])
+    if z == 1 then
+      k2_down_time = 0
+    else
+      -- K2 release: check for long hold
+      if k2_down_time > 0.5 then
+        pattern_locked = not pattern_locked
+        print("ram_opz: pattern " .. (pattern_locked and "LOCKED" or "UNLOCKED"))
+      else
+        state.running = not state.running
+        if not state.running then all_notes_off() end
+      end
+      k2_down_time = 0
+    end
+  elseif n == 3 and z == 1 then
+    if not pattern_locked then
+      regen_track(tracks[selected_track])
+    end
   end
   screen_dirty = true
 end
+
+-- Timer for K2 hold detection
+clock.run(function()
+  while true do
+    clock.sleep(0.01)
+    if k2_down_time >= 0 and k2_down_time < 10 then
+      k2_down_time = k2_down_time + 0.01
+    end
+  end
+end)
 
 function init()
   math.randomseed(os.time())
@@ -605,4 +714,6 @@ function cleanup()
   all_notes_off()
   if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
+  -- Save current scene
+  save_scene(current_scene)
 end
