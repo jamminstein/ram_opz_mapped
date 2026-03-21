@@ -11,6 +11,10 @@ local musicutil = require "musicutil"
 
 local function clamp(x,a,b) return math.max(a, math.min(b, x)) end
 
+local function midi_to_hz(note)
+  return 440 * 2^((note - 69) / 12)
+end
+
 local m = nil
 local selected_track = 1
 local sequencer_clock = nil
@@ -403,11 +407,15 @@ local function play_chord(ch, root_note, vel)
   end
   for _, n in ipairs(notes) do
     note_on(ch, clamp(n, 0, 127), vel)
+    -- Engine output
+    local freq = midi_to_hz(n)
+    engine.noteOn(n, freq, vel / 127)
   end
   clock.run(function()
     clock.sleep(0.45)
     for _, n in ipairs(notes) do
       note_off(ch, clamp(n, 0, 127))
+      engine.noteOff(n)
     end
   end)
 end
@@ -436,17 +444,22 @@ local function play_step()
     if t.enabled and t.pattern[state.step] then
       if t.kind == "drum" then
         note_on(t.ch, 60, t.vel)
+        engine.noteOn(60, midi_to_hz(60), t.vel / 127)
         clock.run(function()
           clock.sleep(0.12)
           note_off(t.ch, 60)
+          engine.noteOff(60)
         end)
       elseif t.kind == "bass" or t.kind == "arp" or t.kind == "lead" then
         local note = t.notes[state.step] or choose_from_scale(48, 84)
         note = clamp(note + t.oct, 0, 127)
         note_on(t.ch, note, t.vel)
+        local freq = midi_to_hz(note)
+        engine.noteOn(note, freq, t.vel / 127)
         clock.run(function()
           clock.sleep(0.20)
           note_off(t.ch, note)
+          engine.noteOff(note)
         end)
       elseif t.kind == "chord" then
         local root_note = choose_from_scale(52, 72)
@@ -585,25 +598,6 @@ function redraw()
   screen.move(120, 60)
   screen.text_right(active_count .. "/8")
 
-  -- Pattern lock indicator
-  if pattern_locked then
-    screen.level(15)
-    screen.move(2, 65)
-    screen.text("LOCK")
-  end
-  
-  -- ==============================================
-  -- TRANSIENT PARAMETER POPUP (0.8s duration)
-  -- ==============================================
-  if popup_param and popup_time > 0 then
-    screen.level(15)
-    screen.move(64, 20)
-    screen.text_center(popup_param)
-    screen.move(64, 32)
-    screen.text_center(tostring(popup_val))
-    popup_time = popup_time - 1
-  end
-  
   screen.update()
 end
 
@@ -712,6 +706,7 @@ end
 function cleanup()
   state.running = false
   all_notes_off()
+  engine.noteOffAll()
   if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
   -- Save current scene
