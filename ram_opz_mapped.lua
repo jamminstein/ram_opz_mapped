@@ -7,6 +7,8 @@
 -- v1.2: Redesigned screen with status strip, live zone with activity meters,
 --       step component indicator, context bar, and transient parameter popup
 
+engine.name = "PolySub"
+
 local musicutil = require "musicutil"
 
 local function clamp(x,a,b) return math.max(a, math.min(b, x)) end
