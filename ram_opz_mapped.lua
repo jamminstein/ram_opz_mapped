@@ -26,6 +26,7 @@ local function opxy_note_on(note, vel) if opxy_out then opxy_out:note_on(note, v
 local function opxy_note_off(note) if opxy_out then opxy_out:note_off(note, 0, params:get("opxy_channel")) end end
 local sequencer_clock = nil
 local screen_refresh_id = nil
+local k2_hold_clock_id = nil
 local screen_dirty = true
 local pattern_locked = false     -- K2 long-hold to lock patterns
 local k2_down_time = 0
@@ -697,7 +698,7 @@ function init()
   clock.set_tempo(state.bpm)
 
   -- Timer for K2 hold detection
-  clock.run(function()
+  k2_hold_clock_id = clock.run(function()
     while true do
       clock.sleep(0.01)
       if k2_down_time >= 0 and k2_down_time < 10 then
@@ -721,9 +722,11 @@ function cleanup()
   state.running = false
   all_notes_off()
   if opxy_out then for ch=1,16 do opxy_out:cc(123,0,ch) end end
-  engine.noteOffAll()
+  -- PolySub: noteOff per-voice (all_notes_off already handles MIDI CC 123)
+  for n=0,127 do pcall(function() engine.noteOff(n) end) end
   if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
+  if k2_hold_clock_id then clock.cancel(k2_hold_clock_id) end
   -- Save current scene
   save_scene(current_scene)
 end
