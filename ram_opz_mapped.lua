@@ -658,16 +658,6 @@ function key(n, z)
   screen_dirty = true
 end
 
--- Timer for K2 hold detection
-clock.run(function()
-  while true do
-    clock.sleep(0.01)
-    if k2_down_time >= 0 and k2_down_time < 10 then
-      k2_down_time = k2_down_time + 0.01
-    end
-  end
-end)
-
 function init()
   math.randomseed(os.time())
   build_midi_device_names()
@@ -705,7 +695,17 @@ function init()
 
   params:bang()
   clock.set_tempo(state.bpm)
-  
+
+  -- Timer for K2 hold detection
+  clock.run(function()
+    while true do
+      clock.sleep(0.01)
+      if k2_down_time >= 0 and k2_down_time < 10 then
+        k2_down_time = k2_down_time + 0.01
+      end
+    end
+  end)
+
   -- Screen refresh at ~12fps for animation
   screen_refresh_id = clock.run(function()
     while true do
