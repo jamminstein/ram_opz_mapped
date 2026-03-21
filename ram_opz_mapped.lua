@@ -19,6 +19,11 @@ end
 
 local m = nil
 local selected_track = 1
+
+-- OP-XY MIDI
+local opxy_out = nil
+local function opxy_note_on(note, vel) if opxy_out then opxy_out:note_on(note, vel, params:get("opxy_channel")) end end
+local function opxy_note_off(note) if opxy_out then opxy_out:note_off(note, 0, params:get("opxy_channel")) end end
 local sequencer_clock = nil
 local screen_refresh_id = nil
 local screen_dirty = true
@@ -94,12 +99,14 @@ end
 
 local function note_on(ch, note, vel)
   if m then m:note_on(note, vel, ch) end
+  opxy_note_on(note, vel)
   track_activity[ch] = 1.0
   screen_dirty = true
 end
 
 local function note_off(ch, note)
   if m then m:note_off(note, 0, ch) end
+  opxy_note_off(note)
 end
 
 local function cc(ch, num, val)
@@ -673,6 +680,11 @@ function init()
   params:add_option("midi_out", "midi out", midi_device_names, 1)
   params:set_action("midi_out", function(v) connect_midi(v) end)
 
+  params:add_separator("OP-XY MIDI")
+  params:add{type="number", id="opxy_device", name="OP-XY Device", min=1, max=16, default=2, action=function(v) opxy_out = midi.connect(v) end}
+  params:add{type="number", id="opxy_channel", name="OP-XY Channel", min=1, max=16, default=1}
+  opxy_out = midi.connect(params:get("opxy_device"))
+
   params:add_number("root_note", "root note", 24, 84, state.root)
   params:set_action("root_note", function(v)
     state.root = v
@@ -708,6 +720,7 @@ end
 function cleanup()
   state.running = false
   all_notes_off()
+  if opxy_out then for ch=1,16 do opxy_out:cc(123,0,ch) end end
   engine.noteOffAll()
   if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
