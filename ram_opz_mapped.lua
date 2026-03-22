@@ -628,7 +628,23 @@ local k1_held = false
 
 function enc(n, d)
   if n == 1 then
-    -- E1 reserved for norns system
+    -- E1: cycle spirits
+    current_spirit = clamp(current_spirit + d, 1, #spirits)
+    local sp = spirits[current_spirit]
+    state.root = sp.root
+    state.scale = sp.scale
+    state.bpm = sp.bpm
+    params:set("clock_tempo", sp.bpm)
+    for i = 1, math.min(8, #sp.dens) do
+      if tracks[i] then
+        tracks[i].density = sp.dens[i]
+        tracks[i].enabled = sp.dens[i] > 0.15
+      end
+    end
+    regen_all()
+    popup_param = "SPIRIT"
+    popup_val = sp.name
+    popup_time = 15
   elseif n == 2 then
     if k1_held then
       -- K1+E2: velocity
@@ -700,23 +716,11 @@ function key(n, z)
     end
   elseif n == 3 and z == 1 then
     if k1_held then
-      -- K1+K3: cycle through SPIRITS
-      current_spirit = (current_spirit % #spirits) + 1
-      local sp = spirits[current_spirit]
-      state.root = sp.root
-      state.scale = sp.scale
-      state.bpm = sp.bpm
-      params:set("clock_tempo", sp.bpm)
-      for i = 1, math.min(8, #sp.dens) do
-        if tracks[i] then
-          tracks[i].density = sp.dens[i]
-          tracks[i].enabled = sp.dens[i] > 0.15
-        end
-      end
+      -- K1+K3: regenerate ALL tracks
       regen_all()
-      popup_param = "SPIRIT"
-      popup_val = sp.name
-      popup_time = 20
+      popup_param = "REGEN ALL"
+      popup_val = ""
+      popup_time = 10
     else
       -- K3: VIBE SHIFT — new scale, new root, shuffle densities, regen all
       local roots = {36, 38, 40, 41, 43, 45, 47, 48}
