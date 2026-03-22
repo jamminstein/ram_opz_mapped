@@ -516,161 +516,254 @@ local function sequencer()
   end
 end
 
+local page = 1
+local page_names = {"SPIRIT", "TRACK", "MIX"}
+
 function redraw()
   screen.clear()
-  
-  -- ==============================================
-  -- STATUS STRIP (y 0-8)
-  -- ==============================================
-  screen.level(4)
+  screen.aa(0)
+  screen.font_face(1)
+  screen.font_size(8)
+
+  -- HEADER (y 0-8)
+  screen.level(15)
   screen.move(2, 7)
   screen.text("RAM>OPZ")
 
-  -- BPM display (prominent)
+  -- Page dots
+  for i = 1, #page_names do
+    screen.level(i == page and 15 or 3)
+    screen.pixel(50 + (i - 1) * 6, 3)
+    screen.fill()
+  end
+
+  -- Page name
   screen.level(8)
-  screen.font_size(7)
-  screen.move(64, 7)
-  screen.text_center(state.bpm .. " BPM")
-  screen.font_size(8)
+  screen.move(68, 7)
+  screen.text(page_names[page])
 
-  -- Scene indicator
-  screen.level(6)
-  screen.move(120, 7)
-  screen.text_right("S" .. current_scene)
-  
-  -- Beat pulse dot at x=124
-  if state.beat_phase == 0 and state.running then
-    screen.level(15)
-  else
-    screen.level(3)
-  end
-  screen.rect(122, 2, 3, 3)
+  -- Play state + beat pulse
+  screen.level(state.running and 15 or 4)
+  screen.move(110, 7)
+  screen.text(state.running and ">" or ".")
+
+  screen.level(state.beat_phase == 0 and state.running and 15 or 2)
+  screen.pixel(124, 3)
   screen.fill()
-  
-  -- ==============================================
-  -- LIVE ZONE (y 9-52): 8-channel sequencer
-  -- ==============================================
-  -- Each track row is ~5px tall
-  for ch = 1, 8 do
-    local y = 9 + (ch - 1) * 5
-    local t = tracks[ch]
-    
-    -- Track label at level 5 (or 12 if selected)
-    if ch == selected_track then
-      screen.level(12)
-    else
-      screen.level(5)
-    end
-    screen.move(2, y + 4)
-    screen.text(track_labels[ch])
-    
-    -- Subtle highlight bar behind selected track
-    if ch == selected_track then
-      screen.level(2)
-      screen.rect(0, y, 128, 5)
+
+  -- Divider
+  screen.level(2)
+  screen.move(0, 9)
+  screen.line(128, 9)
+  screen.stroke()
+
+  -- LIVE ZONE (y 10-51)
+  if page == 1 then
+    -- SPIRIT PAGE: show spirit name large, scale, BPM, track overview
+    local sp = spirits[current_spirit]
+    screen.level(15)
+    screen.font_size(16)
+    screen.move(64, 30)
+    local sw = #sp.name * 9
+    screen.move(64 - sw / 2, 30)
+    screen.text(sp.name)
+    screen.font_size(8)
+
+    screen.level(6)
+    screen.move(2, 42)
+    local root_name = musicutil.note_num_to_name(state.root, true)
+    screen.text(root_name .. " " .. (scale_names[state.scale] or ""):sub(1, 10))
+
+    screen.level(4)
+    screen.move(100, 42)
+    screen.text(state.bpm .. "bpm")
+
+    -- Track density bars
+    for i = 1, 8 do
+      local x = 4 + (i - 1) * 15
+      local h = math.floor(sp.dens[i] * 12)
+      screen.level(tracks[i].enabled and 8 or 3)
+      screen.rect(x, 52 - h, 10, h)
       screen.fill()
-      screen.level(12)
-    end
-    
-    -- Activity meter: horizontal bar
-    local activity_brightness = math.floor(track_activity[ch] * 13) + 2
-    if track_activity[ch] > 0 then
-      screen.level(activity_brightness)
-    else
-      screen.level(2)
-    end
-    local meter_width = math.floor(track_activity[ch] * 40)
-    if meter_width > 0 then
-      screen.rect(24, y + 1, meter_width, 3)
-      screen.fill()
-    else
-      screen.rect(24, y + 1, 40, 3)
-      screen.stroke()
-    end
-    
-    -- Step component indicator (STP) if active
-    if step_component_cc[ch].enabled then
-      screen.level(6)
-      screen.move(70, y + 4)
-      screen.text("STP")
     end
 
-    -- Euclidean pattern circle (small, right side)
-    if t.enabled and t.pattern then
-      draw_euclid_circle(105, y + 2, 4, t.pattern)
+  elseif page == 2 then
+    -- TRACK PAGE: 8 tracks with activity + pattern
+    for ch = 1, 8 do
+      local y = 10 + (ch - 1) * 5
+      local t = tracks[ch]
+
+      -- Highlight selected
+      if ch == selected_track then
+        screen.level(2)
+        screen.rect(0, y, 128, 5)
+        screen.fill()
+      end
+
+      -- Label
+      screen.level(ch == selected_track and 15 or (t.enabled and 6 or 3))
+      screen.move(2, y + 4)
+      screen.text(track_labels[ch] or ("T" .. ch))
+
+      -- Activity bar
+      local aw = math.floor(track_activity[ch] * 50)
+      if aw > 0 then
+        screen.level(math.floor(track_activity[ch] * 12) + 3)
+        screen.rect(22, y + 1, aw, 3)
+        screen.fill()
+      end
+
+      -- Density dot
+      screen.level(math.floor(t.density * 12) + 2)
+      screen.rect(80, y + 1, math.floor(t.density * 20), 3)
+      screen.fill()
+
+      -- Mute indicator
+      if not t.enabled then
+        screen.level(3)
+        screen.move(110, y + 4)
+        screen.text("x")
+      end
+    end
+
+  elseif page == 3 then
+    -- MIX PAGE: selected track detail
+    local t = tracks[selected_track]
+    screen.level(15)
+    screen.move(2, 20)
+    screen.text("TRACK " .. selected_track)
+
+    screen.level(8)
+    screen.move(60, 20)
+    screen.text(t.kind)
+
+    screen.level(t.enabled and 10 or 4)
+    screen.move(100, 20)
+    screen.text(t.enabled and "ON" or "MUTE")
+
+    -- Velocity bar
+    screen.level(6)
+    screen.move(2, 32)
+    screen.text("VEL")
+    screen.level(10)
+    screen.rect(30, 27, math.floor(t.vel / 127 * 90), 5)
+    screen.fill()
+    screen.level(4)
+    screen.move(122, 32)
+    screen.text(t.vel)
+
+    -- Octave
+    screen.level(6)
+    screen.move(2, 42)
+    screen.text("OCT")
+    screen.level(10)
+    local oct_x = 64 + t.oct
+    screen.rect(oct_x, 37, 2, 5)
+    screen.fill()
+    screen.level(4)
+    screen.move(122, 42)
+    screen.text(t.oct)
+
+    -- Density
+    screen.level(6)
+    screen.move(2, 52)
+    screen.text("DEN")
+    screen.level(10)
+    screen.rect(30, 47, math.floor(t.density * 90), 5)
+    screen.fill()
+    screen.level(4)
+    screen.move(122, 52)
+    screen.text(string.format("%.0f%%", t.density * 100))
+  end
+
+  -- BOTTOM BAR (y 55-63)
+  screen.level(2)
+  screen.move(0, 55)
+  screen.line(128, 55)
+  screen.stroke()
+
+  screen.level(5)
+  screen.move(2, 63)
+  screen.text("E2:" .. (page == 1 and "spirit" or page == 2 and "track" or "vel"))
+  screen.move(50, 63)
+  screen.text("E3:" .. (page == 1 and "bpm" or page == 2 and "dens" or "oct"))
+  screen.move(95, 63)
+  screen.text("K3:" .. (page == 1 and "vibe" or page == 2 and "regen" or "mute"))
+
+  -- POPUP overlay
+  if popup_time and popup_time > 0 then
+    screen.level(0)
+    screen.rect(24, 20, 80, 22)
+    screen.fill()
+    screen.level(15)
+    screen.rect(24, 20, 80, 22)
+    screen.stroke()
+    screen.move(64, 33)
+    local ptxt = tostring(popup_param or "")
+    screen.move(64 - #ptxt * 3, 33)
+    screen.text(ptxt)
+    if popup_val and popup_val ~= "" then
+      local vtxt = tostring(popup_val)
+      screen.level(10)
+      screen.move(64 - #vtxt * 3, 40)
+      screen.text(vtxt)
     end
   end
-  
-  -- ==============================================
-  -- CONTEXT BAR (y 53-58)
-  -- ==============================================
-  screen.level(6)
-  screen.move(2, 60)
-  screen.text(scale_names[state.scale] or "Unknown")
-  
-  screen.level(4)
-  screen.move(50, 60)
-  screen.text(midi_device_names[params:get("midi_out")] or "MIDI")
-  
-  -- Active track count
-  local active_count = 0
-  for i = 1, 8 do
-    if tracks[i].enabled then active_count = active_count + 1 end
-  end
-  screen.level(5)
-  screen.move(120, 60)
-  screen.text_right(active_count .. "/8")
 
   screen.update()
 end
 
-local k1_held = false
-
 function enc(n, d)
   if n == 1 then
-    -- E1: cycle spirits
-    current_spirit = clamp(current_spirit + d, 1, #spirits)
-    local sp = spirits[current_spirit]
-    state.root = sp.root
-    state.scale = sp.scale
-    state.bpm = sp.bpm
-    params:set("clock_tempo", sp.bpm)
-    for i = 1, math.min(8, #sp.dens) do
-      if tracks[i] then
-        tracks[i].density = sp.dens[i]
-        tracks[i].enabled = sp.dens[i] > 0.15
-      end
-    end
-    regen_all()
-    popup_param = "SPIRIT"
-    popup_val = sp.name
-    popup_time = 15
+    -- E1: page select
+    page = clamp(page + d, 1, #page_names)
+    popup_param = "PAGE"
+    popup_val = page_names[page]
+    popup_time = 10
   elseif n == 2 then
-    if k1_held then
-      -- K1+E2: velocity
-      local t = tracks[selected_track]
-      t.vel = clamp(t.vel + d, 20, 127)
-      popup_param = "VEL"
-      popup_val = t.vel
-      popup_time = 10
-    else
-      -- E2: select track
+    if page == 1 then
+      -- SPIRIT page E2: scroll spirits
+      current_spirit = clamp(current_spirit + d, 1, #spirits)
+      local sp = spirits[current_spirit]
+      state.root = sp.root
+      state.scale = sp.scale
+      state.bpm = sp.bpm
+      params:set("clock_tempo", sp.bpm)
+      for i = 1, math.min(8, #sp.dens) do
+        if tracks[i] then
+          tracks[i].density = sp.dens[i]
+          tracks[i].enabled = sp.dens[i] > 0.15
+        end
+      end
+      regen_all()
+      popup_param = "SPIRIT"
+      popup_val = sp.name
+      popup_time = 15
+    elseif page == 2 then
+      -- TRACK page E2: select track
       selected_track = clamp(selected_track + d, 1, 16)
       local t = tracks[selected_track]
       popup_param = "TRACK " .. selected_track
       popup_val = t.kind
       popup_time = 10
+    elseif page == 3 then
+      -- MIX page E2: velocity
+      local t = tracks[selected_track]
+      t.vel = clamp(t.vel + d, 20, 127)
+      popup_param = "VEL T" .. selected_track
+      popup_val = t.vel
+      popup_time = 10
     end
   elseif n == 3 then
-    if k1_held then
-      -- K1+E3: octave shift
-      local t = tracks[selected_track]
-      t.oct = clamp(t.oct + d, -24, 24)
-      popup_param = "OCTAVE"
-      popup_val = t.oct
+    if page == 1 then
+      -- SPIRIT page E3: tempo fine-tune
+      state.bpm = clamp(state.bpm + d, 60, 200)
+      params:set("clock_tempo", state.bpm)
+      popup_param = "BPM"
+      popup_val = state.bpm
       popup_time = 10
-    else
-      -- E3: density
+    elseif page == 2 then
+      -- TRACK page E3: density
       local t = tracks[selected_track]
       t.density = clamp(t.density + d / 100, 0, 1)
       if not pattern_locked then
@@ -679,69 +772,61 @@ function enc(n, d)
       popup_param = "DENSITY"
       popup_val = string.format("%.0f%%", t.density * 100)
       popup_time = 10
+    elseif page == 3 then
+      -- MIX page E3: octave shift
+      local t = tracks[selected_track]
+      t.oct = clamp(t.oct + d, -24, 24)
+      popup_param = "OCT T" .. selected_track
+      popup_val = t.oct
+      popup_time = 10
     end
   end
   screen_dirty = true
 end
 
 function key(n, z)
-  if n == 1 then
-    k1_held = (z == 1)
-    return
-  end
+  if z == 0 then return end
   if n == 2 then
-    if z == 1 then
-      k2_down_time = 0
-    else
-      if k1_held then
-        -- K1+K2: toggle current track enabled
-        local t = tracks[selected_track]
-        t.enabled = not t.enabled
-        popup_param = "TRACK " .. selected_track
-        popup_val = t.enabled and "ON" or "OFF"
-        popup_time = 10
-      elseif k2_down_time > 0.5 then
-        pattern_locked = not pattern_locked
-        popup_param = "PATTERN"
-        popup_val = pattern_locked and "LOCKED" or "FREE"
-        popup_time = 10
-      else
-        state.running = not state.running
-        if not state.running then all_notes_off() end
-        popup_param = state.running and "PLAY" or "STOP"
-        popup_val = ""
-        popup_time = 10
-      end
-      k2_down_time = 0
-    end
-  elseif n == 3 and z == 1 then
-    if k1_held then
-      -- K1+K3: regenerate ALL tracks
-      regen_all()
-      popup_param = "REGEN ALL"
-      popup_val = ""
-      popup_time = 10
-    else
-      -- K3: VIBE SHIFT — new scale, new root, shuffle densities, regen all
+    -- K2: play/stop
+    state.running = not state.running
+    if not state.running then all_notes_off() end
+    popup_param = state.running and "PLAY" or "STOP"
+    popup_val = ""
+    popup_time = 10
+  elseif n == 3 then
+    if page == 1 then
+      -- K3 on SPIRIT page: vibe shift (random)
       local roots = {36, 38, 40, 41, 43, 45, 47, 48}
       state.root = roots[math.random(#roots)]
       local good_scales = {1, 2, 3, 5, 7, 8, 11, 12, 29}
       state.scale = good_scales[math.random(#good_scales)]
-      -- shuffle densities across tracks
       for i = 1, 16 do
         local t = tracks[i]
         if t then
           t.density = clamp(t.density + (math.random() - 0.5) * 0.3, 0.05, 0.95)
-          -- occasionally flip a track on/off
           if math.random() < 0.15 then t.enabled = not t.enabled end
         end
       end
       regen_all()
       local root_name = musicutil.note_num_to_name(state.root, true)
-      local scale_name = musicutil.SCALES[state.scale].name
-      popup_param = root_name .. " " .. scale_name:sub(1, 8)
-      popup_val = "VIBE SHIFT"
+      popup_param = "VIBE SHIFT"
+      popup_val = root_name
       popup_time = 15
+    elseif page == 2 then
+      -- K3 on TRACK page: regen current track
+      if not pattern_locked then
+        regen_track(tracks[selected_track])
+        popup_param = "REGEN"
+        popup_val = "T" .. selected_track
+        popup_time = 10
+      end
+    elseif page == 3 then
+      -- K3 on MIX page: toggle track mute
+      local t = tracks[selected_track]
+      t.enabled = not t.enabled
+      popup_param = "T" .. selected_track
+      popup_val = t.enabled and "ON" or "OFF"
+      popup_time = 10
     end
   end
   screen_dirty = true
