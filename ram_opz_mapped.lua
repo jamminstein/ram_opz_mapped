@@ -611,49 +611,95 @@ function redraw()
   screen.update()
 end
 
+local k1_held = false
+
 function enc(n, d)
   if n == 1 then
-    -- E1: scene selection
-    current_scene = clamp(current_scene + d, 1, 8)
-    load_scene(current_scene)
-    popup_param = "SCENE"
-    popup_val = current_scene
-    popup_time = 10
+    -- E1 reserved for norns system
   elseif n == 2 then
-    selected_track = clamp(selected_track + d, 1, 16)
-  elseif n == 3 then
-    local t = tracks[selected_track]
-    t.density = clamp(t.density + d / 100, 0, 1)
-    if not pattern_locked then
-      regen_track(t)
+    if k1_held then
+      -- K1+E2: velocity
+      local t = tracks[selected_track]
+      t.vel = clamp(t.vel + d, 20, 127)
+      popup_param = "VEL"
+      popup_val = t.vel
+      popup_time = 10
+    else
+      -- E2: select track
+      selected_track = clamp(selected_track + d, 1, 16)
+      local t = tracks[selected_track]
+      popup_param = "TRACK " .. selected_track
+      popup_val = t.kind
+      popup_time = 10
     end
-
-    -- Show popup
-    popup_param = "DENSITY"
-    popup_val = string.format("%.2f", t.density)
-    popup_time = 10  -- ~0.8s at 12fps
+  elseif n == 3 then
+    if k1_held then
+      -- K1+E3: octave shift
+      local t = tracks[selected_track]
+      t.oct = clamp(t.oct + d, -24, 24)
+      popup_param = "OCTAVE"
+      popup_val = t.oct
+      popup_time = 10
+    else
+      -- E3: density
+      local t = tracks[selected_track]
+      t.density = clamp(t.density + d / 100, 0, 1)
+      if not pattern_locked then
+        regen_track(t)
+      end
+      popup_param = "DENSITY"
+      popup_val = string.format("%.0f%%", t.density * 100)
+      popup_time = 10
+    end
   end
   screen_dirty = true
 end
 
 function key(n, z)
+  if n == 1 then
+    k1_held = (z == 1)
+    return
+  end
   if n == 2 then
     if z == 1 then
       k2_down_time = 0
     else
-      -- K2 release: check for long hold
-      if k2_down_time > 0.5 then
+      if k1_held then
+        -- K1+K2: toggle current track enabled
+        local t = tracks[selected_track]
+        t.enabled = not t.enabled
+        popup_param = "TRACK " .. selected_track
+        popup_val = t.enabled and "ON" or "OFF"
+        popup_time = 10
+      elseif k2_down_time > 0.5 then
         pattern_locked = not pattern_locked
-        print("ram_opz: pattern " .. (pattern_locked and "LOCKED" or "UNLOCKED"))
+        popup_param = "PATTERN"
+        popup_val = pattern_locked and "LOCKED" or "FREE"
+        popup_time = 10
       else
         state.running = not state.running
         if not state.running then all_notes_off() end
+        popup_param = state.running and "PLAY" or "STOP"
+        popup_val = ""
+        popup_time = 10
       end
       k2_down_time = 0
     end
   elseif n == 3 and z == 1 then
-    if not pattern_locked then
-      regen_track(tracks[selected_track])
+    if k1_held then
+      -- K1+K3: regenerate ALL tracks
+      regen_all()
+      popup_param = "REGEN ALL"
+      popup_val = ""
+      popup_time = 10
+    else
+      -- K3: regen current track
+      if not pattern_locked then
+        regen_track(tracks[selected_track])
+        popup_param = "REGEN"
+        popup_val = "TRACK " .. selected_track
+        popup_time = 10
+      end
     end
   end
   screen_dirty = true
