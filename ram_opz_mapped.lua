@@ -7,7 +7,7 @@
 -- v1.2: Redesigned screen with status strip, live zone with activity meters,
 --       step component indicator, context bar, and transient parameter popup
 
-engine.name = "PolySub"
+engine.name = "PolyPerc"
 
 local musicutil = require "musicutil"
 
@@ -419,13 +419,13 @@ local function play_chord(ch, root_note, vel)
     note_on(ch, clamp(n, 0, 127), vel)
     -- Engine output
     local freq = midi_to_hz(n)
-    engine.noteOn(n, freq, vel / 127)
+    engine.hz(freq)
   end
   clock.run(function()
     clock.sleep(0.45)
     for _, n in ipairs(notes) do
       note_off(ch, clamp(n, 0, 127))
-      engine.noteOff(n)
+      
     end
   end)
 end
@@ -454,22 +454,22 @@ local function play_step()
     if t.enabled and t.pattern[state.step] then
       if t.kind == "drum" then
         note_on(t.ch, 60, t.vel)
-        engine.noteOn(60, midi_to_hz(60), t.vel / 127)
+        engine.hz(midi_to_hz(60))
         clock.run(function()
           clock.sleep(0.12)
           note_off(t.ch, 60)
-          engine.noteOff(60)
+          
         end)
       elseif t.kind == "bass" or t.kind == "arp" or t.kind == "lead" then
         local note = t.notes[state.step] or choose_from_scale(48, 84)
         note = clamp(note + t.oct, 0, 127)
         note_on(t.ch, note, t.vel)
         local freq = midi_to_hz(note)
-        engine.noteOn(note, freq, t.vel / 127)
+        engine.hz(freq)
         clock.run(function()
           clock.sleep(0.20)
           note_off(t.ch, note)
-          engine.noteOff(note)
+          
         end)
       elseif t.kind == "chord" then
         local root_note = choose_from_scale(52, 72)
@@ -661,10 +661,20 @@ end
 
 function init()
   math.randomseed(os.time())
+
+  -- PolyPerc defaults
+  engine.amp(0.7)
+  engine.release(0.3)
+  engine.cutoff(2500)
+  engine.pw(0.4)
+
   build_midi_device_names()
   build_scale_names()
   init_tracks()
   regen_all()
+
+  -- auto-start
+  state.running = true
 
   params:add_group("ram_opz", 4)
 
@@ -723,7 +733,7 @@ function cleanup()
   all_notes_off()
   if opxy_out then for ch=1,16 do opxy_out:cc(123,0,ch) end end
   -- PolySub: noteOff per-voice (all_notes_off already handles MIDI CC 123)
-  for n=0,127 do pcall(function() engine.noteOff(n) end) end
+  for n=0,127 do pcall(function()  end) end
   if screen_refresh_id then clock.cancel(screen_refresh_id) end
   if sequencer_clock then clock.cancel(sequencer_clock) end
   if k2_hold_clock_id then clock.cancel(k2_hold_clock_id) end
