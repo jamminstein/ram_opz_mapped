@@ -41,6 +41,19 @@ local state = {
   beat_phase = 0,
 }
 
+-- SPIRITS: named moods that shape the whole sequencer
+local spirits = {
+  {name="MIDNIGHT",   root=36, scale=7,  bpm=85,  dens={0.7,0.3,0.2,0.5, 0.4,0.6,0.3,0.2}},
+  {name="SUNRISE",    root=48, scale=1,  bpm=110, dens={0.5,0.6,0.7,0.4, 0.8,0.5,0.3,0.6}},
+  {name="HEAT",       root=41, scale=29, bpm=128, dens={0.9,0.8,0.5,0.7, 0.6,0.9,0.4,0.8}},
+  {name="DRIFT",      root=45, scale=5,  bpm=92,  dens={0.3,0.2,0.6,0.3, 0.5,0.4,0.7,0.2}},
+  {name="FUNK",       root=43, scale=2,  bpm=105, dens={0.8,0.7,0.4,0.6, 0.5,0.8,0.6,0.7}},
+  {name="CRYSTAL",    root=48, scale=11, bpm=72,  dens={0.2,0.4,0.8,0.3, 0.6,0.3,0.9,0.1}},
+  {name="PRESSURE",   root=38, scale=8,  bpm=140, dens={0.9,0.9,0.3,0.8, 0.7,0.5,0.6,0.9}},
+  {name="GHOST",      root=40, scale=3,  bpm=98,  dens={0.4,0.5,0.3,0.2, 0.3,0.7,0.5,0.4}},
+}
+local current_spirit = 1
+
 local midi_device_names = {}
 local scale_names = {}
 local tracks = {}
@@ -687,11 +700,23 @@ function key(n, z)
     end
   elseif n == 3 and z == 1 then
     if k1_held then
-      -- K1+K3: regenerate ALL tracks (keep vibe)
+      -- K1+K3: cycle through SPIRITS
+      current_spirit = (current_spirit % #spirits) + 1
+      local sp = spirits[current_spirit]
+      state.root = sp.root
+      state.scale = sp.scale
+      state.bpm = sp.bpm
+      params:set("clock_tempo", sp.bpm)
+      for i = 1, math.min(8, #sp.dens) do
+        if tracks[i] then
+          tracks[i].density = sp.dens[i]
+          tracks[i].enabled = sp.dens[i] > 0.15
+        end
+      end
       regen_all()
-      popup_param = "REGEN ALL"
-      popup_val = ""
-      popup_time = 10
+      popup_param = "SPIRIT"
+      popup_val = sp.name
+      popup_time = 20
     else
       -- K3: VIBE SHIFT — new scale, new root, shuffle densities, regen all
       local roots = {36, 38, 40, 41, 43, 45, 47, 48}
