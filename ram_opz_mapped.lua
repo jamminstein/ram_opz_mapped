@@ -877,6 +877,34 @@ function init()
     params:set("clock_tempo", v)
   end)
 
+  -- Track params for robot modulation
+  params:add_separator("TRACK CONTROLS")
+  local track_kinds = {"kick", "snare", "hat", "perc", "bass", "chord", "arp", "lead"}
+  for i = 1, 8 do
+    local label = track_kinds[i] or ("t" .. i)
+    params:add_control("density_" .. label, label .. " density",
+      controlspec.new(0, 1, "lin", 0.01, tracks[i].density, ""))
+    params:set_action("density_" .. label, function(v)
+      tracks[i].density = v
+      if not pattern_locked then regen_track(tracks[i]) end
+    end)
+    params:add_number("vel_" .. label, label .. " vel", 20, 127, tracks[i].vel)
+    params:set_action("vel_" .. label, function(v) tracks[i].vel = v end)
+    params:add_number("oct_" .. label, label .. " oct", -24, 24, tracks[i].oct)
+    params:set_action("oct_" .. label, function(v) tracks[i].oct = v end)
+  end
+
+  params:add_separator("SOUND")
+  params:add_control("cutoff", "filter cutoff",
+    controlspec.new(200, 8000, "exp", 1, 2500, "Hz"))
+  params:set_action("cutoff", function(v) engine.cutoff(v) end)
+  params:add_control("release", "release",
+    controlspec.new(0.05, 2.0, "lin", 0.01, 0.3, "s"))
+  params:set_action("release", function(v) engine.release(v) end)
+  params:add_control("pw", "pulse width",
+    controlspec.new(0.1, 0.9, "lin", 0.01, 0.4, ""))
+  params:set_action("pw", function(v) engine.pw(v) end)
+
   params:bang()
   params:set("clock_tempo", state.bpm)
 
