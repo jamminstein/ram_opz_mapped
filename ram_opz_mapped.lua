@@ -687,19 +687,32 @@ function key(n, z)
     end
   elseif n == 3 and z == 1 then
     if k1_held then
-      -- K1+K3: regenerate ALL tracks
+      -- K1+K3: regenerate ALL tracks (keep vibe)
       regen_all()
       popup_param = "REGEN ALL"
       popup_val = ""
       popup_time = 10
     else
-      -- K3: regen current track
-      if not pattern_locked then
-        regen_track(tracks[selected_track])
-        popup_param = "REGEN"
-        popup_val = "TRACK " .. selected_track
-        popup_time = 10
+      -- K3: VIBE SHIFT — new scale, new root, shuffle densities, regen all
+      local roots = {36, 38, 40, 41, 43, 45, 47, 48}
+      state.root = roots[math.random(#roots)]
+      local good_scales = {1, 2, 3, 5, 7, 8, 11, 12, 29}
+      state.scale = good_scales[math.random(#good_scales)]
+      -- shuffle densities across tracks
+      for i = 1, 16 do
+        local t = tracks[i]
+        if t then
+          t.density = clamp(t.density + (math.random() - 0.5) * 0.3, 0.05, 0.95)
+          -- occasionally flip a track on/off
+          if math.random() < 0.15 then t.enabled = not t.enabled end
+        end
       end
+      regen_all()
+      local root_name = musicutil.note_num_to_name(state.root, true)
+      local scale_name = musicutil.SCALES[state.scale].name
+      popup_param = root_name .. " " .. scale_name:sub(1, 8)
+      popup_val = "VIBE SHIFT"
+      popup_time = 15
     end
   end
   screen_dirty = true
