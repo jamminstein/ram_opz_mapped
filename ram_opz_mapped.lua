@@ -691,11 +691,11 @@ function init()
   params:add_number("tempo", "tempo", 60, 180, state.bpm)
   params:set_action("tempo", function(v)
     state.bpm = v
-    clock.set_tempo(v)
+    params:set("clock_tempo", v)
   end)
 
   params:bang()
-  clock.set_tempo(state.bpm)
+  params:set("clock_tempo", state.bpm)
 
   -- Timer for K2 hold detection
   k2_hold_clock_id = clock.run(function()
